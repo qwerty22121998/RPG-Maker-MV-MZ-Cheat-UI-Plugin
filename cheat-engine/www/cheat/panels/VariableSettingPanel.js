@@ -1,7 +1,10 @@
 import {TRANSLATE_SETTINGS, TRANSLATOR} from '../js/TranslateHelper.js'
+import PinMixin from '../js/PinMixin.js'
 
 export default {
     name: 'VariableSettingPanel',
+
+    mixins: [PinMixin],
 
     template: `
 <v-card flat class="ma-0 pa-0">
@@ -12,6 +15,7 @@ export default {
         :items="filteredTableItems"
         :search="search"
         :custom-filter="tableItemFilter"
+        :custom-sort="sortPinnedFirst"
         :items-per-page="5">
         <template v-slot:top>
             <v-text-field
@@ -40,6 +44,10 @@ export default {
             </v-row>
         </template>
         <template
+            v-slot:item.pin="{ item }">
+            <v-icon small @click="togglePin(item)">{{ pins[item.id] ? 'mdi-pin' : 'mdi-pin-outline' }}</v-icon>
+        </template>
+        <template
             v-slot:item.value="{ item }">
             <v-text-field
                 background-color="grey darken-3"
@@ -48,11 +56,11 @@ export default {
                 style="width: 60px;"
                 hide-details
                 solo
-                v-model="item.value"
+                :value="item.value"
                 label="Value"
                 dense
                 @keydown.self.stop
-                @change="onItemChange(item)"
+                @change="onItemChange(item, $event)"
                 @focus="$event.target.select()">
             </v-text-field>
         </template>
@@ -85,10 +93,16 @@ export default {
         return {
             search: '',
             excludeNameless: false,
+            pinKey: 'cheat.pins.variables',
 
             variableNames: [],
 
             tableHeaders: [
+                {
+                    text: 'Pin',
+                    value: 'pin',
+                    sortable: false
+                },
                 {
                     text: 'Name',
                     value: 'name'
@@ -109,6 +123,10 @@ export default {
     computed: {
         filteredTableItems () {
             return this.tableItems.filter(item => {
+                if (this.pins[item.id]) {
+                    return true
+                }
+
                 if (this.excludeNameless && !item.name) {
                     return false
                 }
@@ -141,16 +159,20 @@ export default {
             return rawVariableNames
         },
 
-        onItemChange (item) {
-            // modify value
-            $gameVariables.setValue(item.id, item.value)
+        onItemChange (item, input) {
+            // modify value (the text field gives a string: keep numbers as numbers, or the game's "+ 1" appends a digit)
+            const number = Number(input)
+            $gameVariables.setValue(item.id, isNaN(number) ? input : number)
 
-            // refresh
-            item.value = $gameVariables.value(item.id)
+            // refresh (in two steps, so the field is redrawn even if the game kept the old value)
+            item.value = input
+            this.$nextTick(() => {
+                item.value = $gameVariables.value(item.id)
+            })
         },
 
         tableItemFilter (value, search, item) {
-            if (search === null || search.trim() === '') {
+            if (this.pins[item.id] || search === null || search.trim() === '') {
                 return true
             }
 
